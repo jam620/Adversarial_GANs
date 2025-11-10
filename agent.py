@@ -28,7 +28,17 @@ class FixedRLAgent:
             'obfuscate_network_calls',
             'use_reflection_methods',
             'add_fake_error_handling',
-            'modify_encoding_methods'
+            'modify_encoding_methods',
+            'use_hex_encoding',
+            'split_strings_chunks',
+            'add_junk_code',
+            'obfuscate_with_xor',
+            'use_environment_variables',
+            'use_char_array_encoding',
+            'use_cmdlet_aliases',
+            'use_mac_address_encoding',
+            'use_ipv4_encoding',
+            'use_uuid_encoding'
         ]
 
         self.mutation_history = []
@@ -69,9 +79,21 @@ class FixedRLAgent:
         
         return state
 
-    def choose_action(self, state):
+    def _ensure_state_has_all_actions(self, state):
+        """
+        Asegura que un estado tenga todas las acciones disponibles.
+        Añade acciones faltantes con valor por defecto si es necesario.
+        """
         if state not in self.q_table:
             self.q_table[state] = {action: 1.0 for action in self.actions}
+        else:
+            # Añadir acciones faltantes si el estado fue creado antes de añadir nuevas acciones
+            for action in self.actions:
+                if action not in self.q_table[state]:
+                    self.q_table[state][action] = 1.0
+
+    def choose_action(self, state):
+        self._ensure_state_has_all_actions(state)
 
         if random.random() < self.exploration_rate:
             action = random.choice(self.actions)
@@ -81,10 +103,14 @@ class FixedRLAgent:
         return action
 
     def update_q_value(self, state, action, reward, next_state):
-        if state not in self.q_table:
-            self.q_table[state] = {action: 1.0 for action in self.actions}
-        if next_state not in self.q_table:
-            self.q_table[next_state] = {action: 1.0 for action in self.actions}
+        # Asegurar que ambos estados tengan todas las acciones
+        self._ensure_state_has_all_actions(state)
+        self._ensure_state_has_all_actions(next_state)
+
+        # Verificar que la acción existe (debería existir después de _ensure_state_has_all_actions)
+        if action not in self.q_table[state]:
+            logger.warning(f"Acción {action} no encontrada en estado {state}, añadiéndola")
+            self.q_table[state][action] = 1.0
 
         current_q = self.q_table[state][action]
         max_next_q = max(self.q_table[next_state].values())
@@ -112,6 +138,20 @@ class FixedRLAgent:
             try:
                 with open(file_path, 'r') as f:
                     self.q_table = json.load(f)
+                
+                # Asegurar que todos los estados cargados tengan todas las acciones actuales
+                states_updated = 0
+                for state in self.q_table:
+                    original_count = len(self.q_table[state])
+                    for action in self.actions:
+                        if action not in self.q_table[state]:
+                            self.q_table[state][action] = 1.0
+                    if len(self.q_table[state]) > original_count:
+                        states_updated += 1
+                
+                if states_updated > 0:
+                    logger.info(f"Actualizados {states_updated} estados con nuevas acciones")
+                
                 logger.info(f"Tabla Q cargada: {len(self.q_table)} estados")
             except (json.JSONDecodeError, IOError) as e:
                 logger.error(f"Error al cargar tabla Q: {e}. Se creará una nueva.")
